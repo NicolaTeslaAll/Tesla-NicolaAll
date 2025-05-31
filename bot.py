@@ -10,6 +10,7 @@ from telebot import types
 import requests
 from io import BytesIO
 import threading
+import colorsys
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -17,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 # Токен бота из переменной окружения
 TOKEN = os.environ.get('7714752663:AAETb0MsNFWKVHBzDO4vMJFWoJtu9xr56IY')
+if TOKEN is None:
+    logger.error("TELEGRAM_BOT_TOKEN не установлен. Пожалуйста, задайте токен в переменных окружения.")
+    exit(1)
 bot = telebot.TeleBot(TOKEN)
 
 # Варианты цветов для перекраски с RGB значениями
@@ -53,7 +57,7 @@ CLEANUP_TIMEOUT = 7200  # секунды
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, 
+    bot.reply_to(message,
                  "Добро пожаловать в бот для перекраски текстур Minecraft!\n\n"
                  "Отправьте мне .mcpack файл, и я помогу перекрасить его в различные цвета.\n"
                  "Размер файла должен быть меньше 20МБ.")
@@ -85,8 +89,8 @@ def handle_document(message):
         target_paths = find_png_files(extract_dir)
         
         if not target_paths:
-            bot.edit_message_text("В .mcpack файле не найдено PNG изображений.", 
-                                 chat_id=message.chat.id, 
+            bot.edit_message_text("В .mcpack файле не найдено PNG изображений.",
+                                 chat_id=message.chat.id,
                                  message_id=status_message.message_id)
             cleanup_temp_files(extract_dir, file_path)
             return
@@ -106,8 +110,8 @@ def handle_document(message):
         schedule_cleanup(message.chat.id)
         
         # Обновление статусного сообщения
-        bot.edit_message_text(f"Найдено {len(target_paths)} PNG файлов для перекраски.", 
-                             chat_id=message.chat.id, 
+        bot.edit_message_text(f"Найдено {len(target_paths)} PNG файлов для перекраски.",
+                             chat_id=message.chat.id,
                              message_id=status_message.message_id)
         
         # Предоставление опций цветов
@@ -115,8 +119,8 @@ def handle_document(message):
         
     except Exception as e:
         logger.error(f"Ошибка обработки файла: {e}")
-        bot.edit_message_text(f"Ошибка обработки вашего файла: {str(e)}", 
-                             chat_id=message.chat.id, 
+        bot.edit_message_text(f"Ошибка обработки вашего файла: {str(e)}",
+                             chat_id=message.chat.id,
                              message_id=status_message.message_id)
         cleanup_user_data(message.chat.id)
 
@@ -141,7 +145,7 @@ def extract_mcpack(file_path):
     extract_dir = tempfile.mkdtemp()
     
     # Переименование .mcpack в .zip для распаковки
-    zip_path = os.path.join(os.path.dirname(file_path), 
+    zip_path = os.path.join(os.path.dirname(file_path),
                            os.path.basename(file_path).replace('.mcpack', '.zip'))
     shutil.copy2(file_path, zip_path)
     
@@ -198,8 +202,8 @@ def handle_color_selection(call):
             return
     
     bot.answer_callback_query(call.id, f"Перекраска в {color_name}...")
-    status_message = bot.edit_message_text(f"Перекраска в {color_name}... Пожалуйста, подождите.", 
-                                        chat_id=chat_id, 
+    status_message = bot.edit_message_text(f"Перекраска в {color_name}... Пожалуйста, подождите.",
+                                        chat_id=chat_id,
                                         message_id=call.message.message_id)
     
     try:
@@ -217,14 +221,14 @@ def handle_color_selection(call):
         new_mcpack_path = create_mcpack(extract_dir, original_file_name, color_name)
         
         # Обновление статусного сообщения
-        bot.edit_message_text(f"Перекраска завершена! Отправляю новый .mcpack файл...", 
-                             chat_id=chat_id, 
+        bot.edit_message_text(f"Перекраска завершена! Отправляю новый .mcpack файл...",
+                             chat_id=chat_id,
                              message_id=status_message.message_id)
         
         # Отправка нового .mcpack файла
         with open(new_mcpack_path, 'rb') as mcpack_file:
             new_file_name = os.path.basename(new_mcpack_path)
-            bot.send_document(chat_id, mcpack_file, caption=f"Перекрашено в {color_name}", 
+            bot.send_document(chat_id, mcpack_file, caption=f"Перекрашено в {color_name}",
                              visible_file_name=new_file_name)
         
         # Очистка нового .mcpack файла
@@ -235,8 +239,8 @@ def handle_color_selection(call):
         
     except Exception as e:
         logger.error(f"Ошибка перекраски: {e}")
-        bot.edit_message_text(f"Ошибка перекраски вашего файла: {str(e)}", 
-                             chat_id=chat_id, 
+        bot.edit_message_text(f"Ошибка перекраски вашего файла: {str(e)}",
+                             chat_id=chat_id,
                              message_id=status_message.message_id)
         cleanup_user_data(chat_id)
 
@@ -245,18 +249,24 @@ def handle_cancel(call):
     chat_id = call.message.chat.id
     
     bot.answer_callback_query(call.id, "Операция отменена.")
-    bot.edit_message_text("Операция отменена. Отправьте новый .mcpack файл для начала.", 
-                         chat_id=chat_id, 
+    bot.edit_message_text("Операция отменена. Отправьте новый .mcpack файл для начала.",
+                         chat_id=chat_id,
                          message_id=call.message.message_id)
     
     cleanup_user_data(chat_id)
 
 def recolor_images(extract_dir, target_paths, target_color):
     """Перекраска определенных PNG изображений в распакованной директории"""
-    # Получение RGB компонентов целевого цвета
-    r_target, g_target, b_target = target_color
+    # Конвертация целевого цвета из RGB в HSV
+    r, g, b = target_color
+    r /= 255.0
+    g /= 255.0
+    b /= 255.0
+    h, s, _ = colorsys.rgb_to_hsv(r, g, b)
+    target_h = int(h * 255)  # Hue в диапазоне [0,255] для PIL
+    target_s = int(s * 255)  # Saturation в диапазоне [0,255] для PIL
     
-    # Поиск и перекраска каждого целевого изображения
+    # Обработка каждого изображения
     for target_path in target_paths:
         full_path = os.path.join(extract_dir, target_path)
         
@@ -265,44 +275,51 @@ def recolor_images(extract_dir, target_paths, target_color):
                 # Открытие изображения
                 img = Image.open(full_path)
                 
-                # Конвертация в RGBA если еще не в этом формате
+                # Конвертация в RGBA, если еще не в этом формате
                 if img.mode != 'RGBA':
                     img = img.convert('RGBA')
                 
-                # Разделение изображения на каналы
+                # Разделение на каналы
                 r, g, b, a = img.split()
                 
-                # Создание версии в оттенках серого для яркости
-                gray = ImageOps.grayscale(img)
+                # Создание RGB изображения для конверсии в HSV
+                img_rgb = Image.merge('RGB', (r, g, b))
+                img_hsv = img_rgb.convert('HSV')
                 
-                # Создание нового цветного изображения
-                colored = Image.merge('RGB', (
-                    ImageOps.colorize(gray, (0, 0, 0), (r_target, r_target, r_target)),
-                    ImageOps.colorize(gray, (0, 0, 0), (g_target, g_target, g_target)),
-                    ImageOps.colorize(gray, (0, 0, 0), (b_target, b_target, b_target)),
-                ))
+                # Разделение HSV каналов
+                h_channel, s_channel, v_channel = img_hsv.split()
                 
-                # Слияние с альфа-каналом
+                # Создание новых H и S каналов с целевыми значениями
+                new_h = Image.new('L', img.size, target_h)
+                new_s = Image.new('L', img.size, target_s)
+                
+                # Слияние с сохранением исходного V канала
+                new_hsv = Image.merge('HSV', (new_h, new_s, v_channel))
+                
+                # Конверсия обратно в RGB
+                new_rgb = new_hsv.convert('RGB')
+                
+                # Добавление альфа-канала
+                colored = new_rgb.convert('RGBA')
                 colored.putalpha(a)
                 
-                # Применение высококачественных улучшений
+                # Применение улучшений
                 enhancer = ImageEnhance.Contrast(colored)
                 colored = enhancer.enhance(1.3)  # Увеличение контраста
                 
                 enhancer = ImageEnhance.Brightness(colored)
-                colored = enhancer.enhance(1.1)  # Небольшое увеличение яркости
+                colored = enhancer.enhance(1.1)  # Увеличение яркости
                 
                 enhancer = ImageEnhance.Color(colored)
-                colored = enhancer.enhance(1.5)  # Увеличение насыщенности цвета
+                colored = enhancer.enhance(1.5)  # Увеличение насыщенности
                 
-                # Сохранение измененного изображения
-                colored.save(full_path)
+                # Сохранение результата
+                colored.save(full_path, 'PNG')
                 
                 logger.info(f"Перекрашено {target_path}")
                 
             except Exception as e:
                 logger.error(f"Ошибка перекраски {target_path}: {e}")
-                # Продолжаем с другими изображениями
         else:
             logger.warning(f"Целевой путь не найден: {target_path}")
 
